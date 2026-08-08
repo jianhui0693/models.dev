@@ -10,19 +10,18 @@ const log = (message: string) =>
 
 log("cleaning dist");
 await fs.rm("./dist", { recursive: true, force: true });
+// Copy the HTML template verbatim. bun's HTML-entrypoint build behaves
+// differently across platforms and versions (Linux 1.2.x/1.3.x: emits
+// `index-<hash>.html` + an HTML-import *placeholder* for the script; Windows
+// 1.3.x: bundles chunks and rewrites references), so don't rely on it.
+await Bun.write("./dist/index.html", Bun.file("./index.html"));
+// Explicitly bundle the client script for the browser. This is the only
+// cross-platform-reliable way to produce a real `dist/index.js`.
 await Bun.build({
-  entrypoints: ["./index.html"],
-  outdir: "dist",
-  target: "bun",
+  entrypoints: ["./src/index.ts"],
+  outdir: "./dist",
+  target: "browser",
 });
-// bun 1.2.x emits HTML entrypoints as `index-<hash>.html` (1.3.x emits
-// `index.html`). Normalize so the rest of the pipeline can rely on
-// `./dist/index.html` regardless of the bun version.
-const distFiles = await fs.readdir("./dist");
-const hashedHtml = distFiles.find((file) => /^index-[^/]+\.html$/.test(file));
-if (hashedHtml) {
-  await fs.rename(`./dist/${hashedHtml}`, "./dist/index.html");
-}
 log("bundled client assets");
 
 for await (const file of new Bun.Glob("./public/*").scan()) {
