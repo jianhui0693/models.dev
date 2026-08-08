@@ -29,6 +29,17 @@ for await (const file of new Bun.Glob("./public/*").scan()) {
   await Bun.write(file.replace("./public/", "./dist/"), Bun.file(file));
 }
 
+// bun 1.2.x bundles the client script but does not rewrite the HTML
+// entrypoint's source-path references (./public/favicon.svg,
+// ./src/index.css). Mirror those files into dist so static hosting
+// resolves them regardless of the bun version.
+await fs.mkdir("./dist/public", { recursive: true });
+for (const file of await fs.readdir("./public")) {
+  await Bun.write(`./dist/public/${file}`, Bun.file(`./public/${file}`));
+}
+await fs.mkdir("./dist/src", { recursive: true });
+await Bun.write("./dist/src/index.css", Bun.file("./src/index.css"));
+
 // Copy provider logos to dist/logos/
 await fs.mkdir("./dist/logos", { recursive: true });
 
@@ -77,7 +88,8 @@ try {
   }
 }
 
-const template = await Bun.file("./dist/index.html").text();
+const template = (await Bun.file("./dist/index.html").text())
+  .replace('src="./src/index.ts"', 'src="./index.js"');
 
 // Render + write pages one at a time. Holding every rendered page in memory
 // at once (each embeds the full search index) easily exceeds the memory
@@ -113,5 +125,10 @@ await Bun.write("./dist/models.json", JSON.stringify(Models));
 await fs.rename("./dist/api.json", "./dist/_api.json");
 await fs.rename("./dist/catalog.json", "./dist/_catalog.json");
 await fs.rename("./dist/models.json", "./dist/_models.json");
+// The client fetches /api.json, /catalog.json and /models.json directly —
+// keep non-underscored copies alongside the Workers-convention names.
+for (const name of ["api.json", "catalog.json", "models.json"]) {
+  await fs.copyFile(`./dist/_${name}`, `./dist/${name}`);
+}
 
 log("build complete");
