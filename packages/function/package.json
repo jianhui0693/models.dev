@@ -5,6 +5,6 @@
   "type": "module",
   "devDependencies": {
     "@cloudflare/workers-types": "4.20250522.0",
-    "@tsconfig/bun": "catalog:"
+    "@tsconfig/bun": "^1.0.8"
   }
 }
