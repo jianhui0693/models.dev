@@ -1,0 +1,9 @@
+# Static-site deployment config for Cloudflare Workers Git integration.
+# This repo is normally deployed via SST (see sst.config.ts); this file only
+# enables the "assets-only" Workers Builds path: no worker code, just the
+# pre-rendered static output of packages/web.
+name = "models-dev-web"
+compatibility_date = "2026-08-08"
+
+[assets]
+directory = "./dist"
