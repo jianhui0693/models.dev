@@ -1,5 +1,7 @@
 base_model = "google/gemini-3.5-flash"
-interleaved = { field = "reasoning_content" }
+
+[interleaved]
+field = "reasoning_content"
 
 [[reasoning_options]]
 type = "effort"
