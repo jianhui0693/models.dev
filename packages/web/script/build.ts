@@ -15,6 +15,14 @@ await Bun.build({
   outdir: "dist",
   target: "bun",
 });
+// bun 1.2.x emits HTML entrypoints as `index-<hash>.html` (1.3.x emits
+// `index.html`). Normalize so the rest of the pipeline can rely on
+// `./dist/index.html` regardless of the bun version.
+const distFiles = await fs.readdir("./dist");
+const hashedHtml = distFiles.find((file) => /^index-[^/]+\.html$/.test(file));
+if (hashedHtml) {
+  await fs.rename(`./dist/${hashedHtml}`, "./dist/index.html");
+}
 log("bundled client assets");
 
 for await (const file of new Bun.Glob("./public/*").scan()) {
