@@ -85,12 +85,17 @@ const template = await Bun.file("./dist/index.html").text();
 // Builds) — stream instead so peak memory stays at ~one page.
 let pageCount = 0;
 await forEachRenderedPage(async (route, rendered) => {
-  const filePath = route === "/"
-    ? "./dist/_index.html"
-    : path.join("./dist", route, "index.html");
-
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await Bun.write(filePath, renderDocument(template, rendered));
+  const html = renderDocument(template, rendered);
+  if (route === "/") {
+    // _index.html: Workers static assets SPA-fallback convention
+    // index.html: required by Cloudflare Pages as the site root entry
+    await Bun.write("./dist/_index.html", html);
+    await Bun.write("./dist/index.html", html);
+  } else {
+    const filePath = path.join("./dist", route, "index.html");
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await Bun.write(filePath, html);
+  }
   pageCount += 1;
   if (pageCount % 500 === 0) {
     log(`wrote ${pageCount} pages`);
@@ -109,5 +114,4 @@ await fs.rename("./dist/api.json", "./dist/_api.json");
 await fs.rename("./dist/catalog.json", "./dist/_catalog.json");
 await fs.rename("./dist/models.json", "./dist/_models.json");
 
-await fs.rm("./dist/index.html", { force: true });
 log("build complete");
