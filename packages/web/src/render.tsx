@@ -125,8 +125,11 @@ const SearchItems = buildSearchItems(
   LabEntries,
 );
 
-export const RenderedPages = buildPages();
-export const Rendered = RenderedPages.get("/")!.html;
+// Serialize once: this ~2MB search index is embedded in every page.
+// JSON.stringify per page would burn ~10ms x 7000 pages at build time.
+const SerializedSearchIndex = JSON.stringify(SearchItems).replace(/</g, "\\u003c");
+
+let cachedPages: Map<string, RenderedPage> | undefined;
 
 export function normalizeRoute(pathname: string) {
   if (pathname !== "/" && pathname.endsWith("/")) {
@@ -135,8 +138,20 @@ export function normalizeRoute(pathname: string) {
   return pathname;
 }
 
+function getPages() {
+  return (cachedPages ??= new Map(renderPageEntries()));
+}
+
 export function getRenderedPage(pathname: string) {
-  return RenderedPages.get(normalizeRoute(pathname));
+  return getPages().get(normalizeRoute(pathname));
+}
+
+export async function forEachRenderedPage(
+  callback: (route: string, page: RenderedPage) => void | Promise<void>,
+) {
+  for (const [route, page] of renderPageEntries()) {
+    await callback(route, page);
+  }
 }
 
 export function renderDocument(template: string, page: RenderedPage) {
@@ -406,32 +421,30 @@ function resolveCanonicalModelId(
   if (models.has(providerScopedId)) return providerScopedId;
 }
 
-function buildPages() {
-  const pages = new Map<string, RenderedPage>();
+function* renderPageEntries(): Generator<[string, RenderedPage]> {
   const modelList = sortModels([...ModelEntries.values()]);
   const providerList = Object.entries(Providers).sort(([, a], [, b]) =>
     a.name.localeCompare(b.name),
   );
 
-  const addPage = (route: string, page: RenderedPage) => {
-    pages.set(normalizeRoute(route), page);
-  };
+  const yieldPage = (route: string, page: RenderedPage) =>
+    [normalizeRoute(route), page] as [string, RenderedPage];
 
   const home = renderPage(
     "models",
     <HomePage models={modelList} providers={providerList} labs={LabEntries} />,
   );
 
-  addPage("/", home);
-  addPage("/models", home);
-  addPage(
+  yield yieldPage("/", home);
+  yield yieldPage("/models", home);
+  yield yieldPage(
     "/providers",
     renderPage("providers", <ProvidersPage providers={providerList} />),
   );
-  addPage("/labs", renderPage("labs", <LabsPage labs={LabEntries} />));
+  yield yieldPage("/labs", renderPage("labs", <LabsPage labs={LabEntries} />));
 
   for (const model of modelList) {
-    addPage(
+    yield yieldPage(
       modelHref(model.id),
       renderPage("models", <ModelPage model={model} />, modelPageMetadata(model)),
     );
@@ -441,7 +454,7 @@ function buildPages() {
     const models = ProviderModelEntries.filter(
       (entry) => entry.providerId === providerId,
     );
-    addPage(
+    yield yieldPage(
       providerHref(providerId),
       renderPage(
         "providers",
@@ -452,10 +465,11 @@ function buildPages() {
   }
 
   for (const lab of LabEntries) {
-    addPage(labHref(lab.id), renderPage("labs", <LabPage lab={lab} />, labPageMetadata(lab)));
+    yield yieldPage(
+      labHref(lab.id),
+      renderPage("labs", <LabPage lab={lab} />, labPageMetadata(lab)),
+    );
   }
-
-  return pages;
 }
 
 function renderPage(
@@ -1402,7 +1416,7 @@ function MobileMenu(props: { active: "models" | "providers" | "labs" }) {
 }
 
 function SearchDialog(props: { items: SearchIndexItem[] }) {
-  const json = JSON.stringify(props.items).replace(/</g, "\\u003c");
+  const json = SerializedSearchIndex;
 
   return (
     <dialog

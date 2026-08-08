@@ -1,15 +1,21 @@
 #!/usr/bin/env bun
 
-import { RenderedPages, Providers, Models, renderDocument } from "../src/render";
+import { forEachRenderedPage, Providers, Models, renderDocument } from "../src/render";
 import fs from "fs/promises";
 import path from "path";
 
+const startedAt = performance.now();
+const log = (message: string) =>
+  console.log(`[build] ${message} (${Math.round((performance.now() - startedAt) / 1000)}s)`);
+
+log("cleaning dist");
 await fs.rm("./dist", { recursive: true, force: true });
 await Bun.build({
   entrypoints: ["./index.html"],
   outdir: "dist",
   target: "bun",
 });
+log("bundled client assets");
 
 for await (const file of new Bun.Glob("./public/*").scan()) {
   await Bun.write(file.replace("./public/", "./dist/"), Bun.file(file));
@@ -65,14 +71,24 @@ try {
 
 const template = await Bun.file("./dist/index.html").text();
 
-for (const [route, rendered] of RenderedPages) {
+// Render + write pages one at a time. Holding every rendered page in memory
+// at once (each embeds the full search index) easily exceeds the memory
+// available in constrained build environments (e.g. Cloudflare Workers
+// Builds) — stream instead so peak memory stays at ~one page.
+let pageCount = 0;
+await forEachRenderedPage(async (route, rendered) => {
   const filePath = route === "/"
     ? "./dist/_index.html"
     : path.join("./dist", route, "index.html");
 
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await Bun.write(filePath, renderDocument(template, rendered));
-}
+  pageCount += 1;
+  if (pageCount % 500 === 0) {
+    log(`wrote ${pageCount} pages`);
+  }
+});
+log(`wrote ${pageCount} pages`);
 
 await Bun.write("./dist/api.json", JSON.stringify(Providers));
 await Bun.write(
@@ -86,3 +102,4 @@ await fs.rename("./dist/catalog.json", "./dist/_catalog.json");
 await fs.rename("./dist/models.json", "./dist/_models.json");
 
 await fs.rm("./dist/index.html", { force: true });
+log("build complete");
