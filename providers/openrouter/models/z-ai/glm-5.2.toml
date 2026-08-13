@@ -4,14 +4,16 @@ base_model = "zhipuai/glm-5.2"
 field = "reasoning_content"
 
 [[reasoning_options]]
+type = "toggle"
+
+[[reasoning_options]]
 type = "effort"
 values = ["high", "xhigh"]
 
 [cost]
-input = 0.3486
-output = 1.0956
-cache_read = 0.06474
+input = 0.5
+output = 3.15
+cache_read = 0.1
 
 [limit]
 context = 1_048_576
-output = 128_000
