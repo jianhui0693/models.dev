@@ -10,7 +10,7 @@ import {
   parseAnthropicPricing,
   type AnthropicModel,
 } from "../src/sync/providers/anthropic.js";
-import { buildCortecsModel, type CortecsModel } from "../src/sync/providers/cortecs.js";
+import { buildCortecsModel, cortecs, type CortecsModel } from "../src/sync/providers/cortecs.js";
 import {
   buildCrossModel,
   CrossModelResponse,
@@ -465,6 +465,46 @@ test("parses CrossModel's nullable reasoning controls", () => {
     effort: undefined,
     budget_tokens: undefined,
   });
+});
+
+test("syncs CrossModel's explicit reasoning controls", () => {
+  const model = buildCrossModel(
+    crossModelModel({
+      capabilities: {
+        json: true,
+        reasoning: {
+          supported: true,
+          toggle: true,
+          effort: ["low", "high", "max"],
+          budget_tokens: { min: 1_024, max: 32_000 },
+        },
+      },
+    }),
+    undefined,
+  );
+
+  expect(model).toMatchObject({
+    reasoning_options: [
+      { type: "toggle" },
+      { type: "effort", values: ["low", "high", "max"] },
+      { type: "budget_tokens", min: 1_024, max: 32_000 },
+    ],
+  });
+});
+
+test("rejects unknown CrossModel reasoning efforts", () => {
+  expect(() =>
+    CrossModelResponse.parse({
+      data: [
+        {
+          ...crossModelModel(),
+          capabilities: {
+            reasoning: { supported: true, effort: ["unexpected"] },
+          },
+        },
+      ],
+    })
+  ).toThrow();
 });
 
 test("syncs NanoGPT's verified reasoning, pricing, limits, and open-weight metadata", () => {
@@ -2635,6 +2675,22 @@ test("defaults new reasoning models to empty reasoning options", () => {
   });
 });
 
+test("normalizes Cortecs file modalities to pdf", () => {
+  const [model] = cortecs.parseModels({
+    object: "list",
+    data: [{
+      id: "document-model",
+      created: 1_775_088_000,
+      pricing: { currency: "EUR", input_token: 1, output_token: 2 },
+      context_size: 65_536,
+      input_modalities: ["text", "file"],
+      output_modalities: ["text"],
+    }],
+  });
+
+  expect(model.input_modalities).toEqual(["text", "pdf"]);
+});
+
 test("preserves authored Cortecs reasoning options missing from the API", () => {
   const model: CortecsModel = {
     id: "deepseek-v4-flash-0731",
@@ -3541,6 +3597,44 @@ test("Vercel factored models inherit temperature from base metadata", () => {
   expect(synced).not.toHaveProperty("temperature");
 });
 
+test("Vercel free routes factor onto the canonical non-free model", () => {
+  const [model] = vercel.parseModels({
+    data: [{
+      id: "zai/glm-4.6v-flash-free",
+      name: "GLM-4.6V-Flash (Free)",
+      created: 1_765_152_000,
+      released: 1_765_152_000,
+      context_window: 128_000,
+      max_tokens: 24_000,
+      type: "language",
+      tags: ["reasoning", "tool-use", "vision", "file-input"],
+      pricing: { input: "0", output: "0" },
+    }],
+  });
+
+  const translated = vercel.translateModel(model!, {
+    existing(id) {
+      return id === "zai/glm-4.6v-flash"
+        ? { reasoning_options: [{ type: "toggle" }] }
+        : undefined;
+    },
+    authored() {
+      return undefined;
+    },
+  });
+
+  expect(translated?.model).toMatchObject({
+    base_model: "zhipuai/glm-4.6v-flash",
+    name: "GLM-4.6V-Flash (Free)",
+    reasoning_options: [{ type: "toggle" }],
+    cost: { input: 0, output: 0 },
+    limit: { output: 24_000 },
+    modalities: { input: ["text", "image", "pdf"] },
+  });
+  expect(translated?.model).not.toHaveProperty("description");
+  expect(translated?.model).not.toHaveProperty("family");
+});
+
 test("Vercel Claude Opus fast variants factor onto base opus metadata", () => {
   const [model] = vercel.parseModels({
     data: [{
@@ -3560,11 +3654,26 @@ test("Vercel Claude Opus fast variants factor onto base opus metadata", () => {
     }],
   });
 
-  expect(buildVercelModel(model!, undefined)).toMatchObject({
+  const translated = vercel.translateModel(model!, {
+    existing(id) {
+      return id === "anthropic/claude-opus-5"
+        ? { reasoning_options: [{ type: "effort", values: ["low", "medium", "high", "xhigh", "max"] }] }
+        : undefined;
+    },
+    authored() {
+      return undefined;
+    },
+  });
+  const synced = translated?.model;
+
+  expect(synced).toMatchObject({
     base_model: "anthropic/claude-opus-5",
     name: "Claude Opus 5 (Fast)",
+    reasoning_options: [{ type: "effort", values: ["low", "medium", "high", "xhigh", "max"] }],
     cost: { input: 10, output: 50, cache_read: 1, cache_write: 12.5 },
   });
+  expect(synced).not.toHaveProperty("description");
+  expect(synced).not.toHaveProperty("family");
 });
 
 test("OpenRouter Claude Opus fast variants factor onto base opus metadata", () => {
