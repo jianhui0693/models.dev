@@ -1,8 +1,8 @@
 name = "Ornith 1.5 9B"
-description = "Ornith 1.5 9B is an FP8 dense open-weight reasoning model built for agentic coding, tool use, visual understanding, and efficient long-context work."
+description = "Ornith 1.5 9B is an FP8 dense open-weight model built for agentic coding, tool use, visual understanding, and efficient long-context work. This variant disables thinking for faster direct responses."
 family = "ornith"
 release_date = "2026-07-29"
-last_updated = "2026-08-23"
+last_updated = "2026-07-29"
 attachment = true
 reasoning = true
 tool_call = true
